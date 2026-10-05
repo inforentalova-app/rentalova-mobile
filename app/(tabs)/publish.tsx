@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { collection, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { X, ChevronDown, ImagePlus, MapPin, ChevronLeft } from 'lucide-react-native';
 import { db, storage, auth } from '../../lib/firebase';
@@ -26,10 +26,23 @@ import { db, storage, auth } from '../../lib/firebase';
 const TEAL = '#4b9c78';
 
 const CATEGORIES = [
-  'Herramientas', 'Camping', 'Electrónica', 'Deporte', 'Hogar y jardín',
-  'Fotografía y vídeo', 'Audio y música', 'Transporte', 'Bebé y niños',
-  'Bricolaje y construcción', 'Cocina y hostelería', 'Ropa y moda',
-  'Juegos y consolas', 'Libros y educación', 'Mascotas', 'Oficina y papelería', 'Otros',
+  { label: 'Herramientas', icon: '🔧' },
+  { label: 'Camping', icon: '⛺' },
+  { label: 'Electrónica', icon: '📱' },
+  { label: 'Deporte', icon: '⚽' },
+  { label: 'Hogar y jardín', icon: '🏡' },
+  { label: 'Fotografía y vídeo', icon: '📸' },
+  { label: 'Audio y música', icon: '🎵' },
+  { label: 'Transporte', icon: '🚗' },
+  { label: 'Bebé y niños', icon: '👶' },
+  { label: 'Bricolaje y construcción', icon: '🏗️' },
+  { label: 'Cocina y hostelería', icon: '🍳' },
+  { label: 'Ropa y moda', icon: '👗' },
+  { label: 'Juegos y consolas', icon: '🎮' },
+  { label: 'Libros y educación', icon: '📚' },
+  { label: 'Mascotas', icon: '🐾' },
+  { label: 'Oficina y papelería', icon: '📎' },
+  { label: 'Otros', icon: '📦' },
 ];
 
 const ZONES = [
@@ -40,7 +53,10 @@ const ZONES = [
   'Móstoles', 'Alcorcón', 'Pozuelo',
 ];
 
+const STEP_LABELS = ['Categoría', 'Detalles', 'Precios', 'Fotos'];
+
 export default function PublishScreen() {
+  const [step, setStep] = useState(1);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('');
@@ -53,12 +69,12 @@ export default function PublishScreen() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [availableNow, setAvailableNow] = useState(true);
 
-  const [categoryModal, setCategoryModal] = useState(false);
   const [zoneModal, setZoneModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [generatingDesc, setGeneratingDesc] = useState(false);
 
+  // ─── Image picking ──────────────────────────────────────────────────────────
   async function pickImages() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -90,16 +106,32 @@ export default function PublishScreen() {
     return getDownloadURL(storageRef);
   }
 
-  function validate(): boolean {
-    if (!title.trim()) { Alert.alert('Campo requerido', 'Añade un título al producto.'); return false; }
-    if (!category) { Alert.alert('Campo requerido', 'Selecciona una categoría.'); return false; }
-    if (!pricePerDay || isNaN(Number(pricePerDay))) { Alert.alert('Campo requerido', 'Introduce un precio por día válido.'); return false; }
-    if (!estimatedValue || isNaN(Number(estimatedValue))) { Alert.alert('Campo requerido', 'Introduce el valor estimado del producto.'); return false; }
-    if (!location) { Alert.alert('Campo requerido', 'Selecciona una zona.'); return false; }
-    if (photos.length === 0) { Alert.alert('Fotos requeridas', 'Añade al menos una foto del producto.'); return false; }
+  // ─── Step validation ────────────────────────────────────────────────────────
+  function validateStep(): boolean {
+    if (step === 1) {
+      if (!category) { Alert.alert('Campo requerido', 'Selecciona una categoría.'); return false; }
+    } else if (step === 2) {
+      if (!title.trim()) { Alert.alert('Campo requerido', 'Añade un título al producto.'); return false; }
+      if (!location) { Alert.alert('Campo requerido', 'Selecciona una zona.'); return false; }
+    } else if (step === 3) {
+      if (!pricePerDay || isNaN(Number(pricePerDay))) { Alert.alert('Campo requerido', 'Introduce un precio por día válido.'); return false; }
+      if (!estimatedValue || isNaN(Number(estimatedValue))) { Alert.alert('Campo requerido', 'Introduce el valor estimado del producto.'); return false; }
+    } else if (step === 4) {
+      if (photos.length === 0) { Alert.alert('Fotos requeridas', 'Añade al menos una foto del producto.'); return false; }
+    }
     return true;
   }
 
+  function goNext() {
+    if (!validateStep()) return;
+    setStep((s) => s + 1);
+  }
+
+  function goBack() {
+    setStep((s) => s - 1);
+  }
+
+  // ─── AI description ─────────────────────────────────────────────────────────
   async function handleGenerateDescription() {
     if (!title.trim()) { Alert.alert('Campo requerido', 'Introduce primero el título del producto.'); return; }
     if (!category) { Alert.alert('Campo requerido', 'Selecciona primero la categoría.'); return; }
@@ -128,13 +160,14 @@ export default function PublishScreen() {
     }
   }
 
+  // ─── Publish ────────────────────────────────────────────────────────────────
   async function handlePublish() {
     const user = auth.currentUser;
     if (!user) { router.replace('/(auth)/login'); return; }
     setLoading(true);
     try {
       const uploadedUrls = await Promise.all(photos.map((uri) => uploadPhoto(uri, user.uid)));
-      await addDoc(collection(db, 'products'), {
+      const ref = await addDoc(collection(db, 'products'), {
         title: title.trim(),
         description: description.trim(),
         category,
@@ -148,8 +181,12 @@ export default function PublishScreen() {
         ownerId: user.uid,
         ownerName: user.displayName ?? null,
         status: availableNow ? 'active' : 'paused',
+        averageRating: 0,
+        reviewCount: 0,
+        isAvailable: true,
         createdAt: Timestamp.now(),
       });
+      await updateDoc(doc(db, 'products', ref.id), { productId: ref.id });
       Alert.alert('¡Publicado!', 'Tu producto ya está disponible.', [
         { text: 'Ver mis productos', onPress: () => router.replace('/my-products') },
       ]);
@@ -175,7 +212,6 @@ export default function PublishScreen() {
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-          {/* Photo */}
           {photos[0] ? (
             <Image source={{ uri: photos[0] }} style={styles.previewPhoto} resizeMode="cover" />
           ) : (
@@ -183,7 +219,6 @@ export default function PublishScreen() {
           )}
 
           <View style={styles.previewContent}>
-            {/* Category */}
             {category ? (
               <View style={styles.previewCategoryBadge}>
                 <Text style={styles.previewCategoryText}>{category}</Text>
@@ -199,7 +234,6 @@ export default function PublishScreen() {
               </View>
             ) : null}
 
-            {/* Prices */}
             <View style={styles.previewPriceSection}>
               <Text style={styles.previewPriceDay}>
                 {pricePerDay}€<Text style={styles.previewPriceDayLabel}>/día</Text>
@@ -221,7 +255,6 @@ export default function PublishScreen() {
 
             <View style={styles.previewDivider} />
 
-            {/* Availability */}
             <View style={styles.previewAvailRow}>
               <View style={[styles.previewAvailBadge, !availableNow && styles.previewAvailBadgePaused]}>
                 <Text style={[styles.previewAvailText, !availableNow && styles.previewAvailTextPaused]}>
@@ -233,7 +266,6 @@ export default function PublishScreen() {
               ) : null}
             </View>
 
-            {/* Description */}
             {description ? (
               <>
                 <View style={styles.previewDivider} />
@@ -242,7 +274,6 @@ export default function PublishScreen() {
               </>
             ) : null}
 
-            {/* Photo strip */}
             {photos.length > 1 && (
               <>
                 <View style={styles.previewDivider} />
@@ -257,10 +288,9 @@ export default function PublishScreen() {
           </View>
         </ScrollView>
 
-        {/* Publish button */}
         <View style={styles.previewFooter}>
           <TouchableOpacity
-            style={[styles.publishBtn, loading && styles.submitDisabled]}
+            style={[styles.publishBtn, loading && styles.btnDisabled]}
             onPress={handlePublish}
             disabled={loading}
             activeOpacity={0.85}
@@ -276,16 +306,48 @@ export default function PublishScreen() {
     );
   }
 
-  // ─── Form ─────────────────────────────────────────────────────────────────────
-  return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Publicar producto</Text>
+  // ─── Step content renderers ──────────────────────────────────────────────────
+  function renderStep1() {
+    const rows: (typeof CATEGORIES)[] = [];
+    for (let i = 0; i < CATEGORIES.length; i += 3) {
+      rows.push(CATEGORIES.slice(i, i + 3));
+    }
+    return (
+      <View>
+        <Text style={styles.stepSubtitle}>¿Qué tipo de producto es?</Text>
+        {rows.map((row, ri) => (
+          <View key={ri} style={styles.categoryRow}>
+            {row.map((cat) => (
+              <TouchableOpacity
+                key={cat.label}
+                style={[styles.categoryCell, category === cat.label && styles.categoryCellActive]}
+                onPress={() => setCategory(cat.label)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.categoryIcon}>{cat.icon}</Text>
+                <Text
+                  style={[styles.categoryLabel, category === cat.label && styles.categoryLabelActive]}
+                  numberOfLines={2}
+                >
+                  {cat.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            {row.length < 3 &&
+              Array.from({ length: 3 - row.length }).map((_, i) => (
+                <View key={`empty-${i}`} style={[styles.categoryCell, styles.categoryCellEmpty]} />
+              ))}
+          </View>
+        ))}
       </View>
+    );
+  }
 
-      <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+  function renderStep2() {
+    return (
+      <View>
+        <Text style={styles.stepSubtitle}>Cuéntanos más sobre el producto</Text>
 
-        {/* Title */}
         <Text style={styles.label}>Título *</Text>
         <TextInput
           style={styles.input}
@@ -295,7 +357,6 @@ export default function PublishScreen() {
           onChangeText={setTitle}
         />
 
-        {/* Description */}
         <View style={styles.descLabelRow}>
           <Text style={styles.label}>Descripción</Text>
           <TouchableOpacity
@@ -322,16 +383,22 @@ export default function PublishScreen() {
           textAlignVertical="top"
         />
 
-        {/* Category */}
-        <Text style={styles.label}>Categoría *</Text>
-        <TouchableOpacity style={styles.select} onPress={() => setCategoryModal(true)} activeOpacity={0.7}>
-          <Text style={[styles.selectText, !category && styles.placeholder]}>
-            {category || 'Seleccionar categoría'}
+        <Text style={styles.label}>Zona *</Text>
+        <TouchableOpacity style={styles.select} onPress={() => setZoneModal(true)} activeOpacity={0.7}>
+          <Text style={[styles.selectText, !location && styles.placeholder]}>
+            {location || 'Seleccionar zona'}
           </Text>
           <ChevronDown size={16} color="#9ca3af" strokeWidth={2} />
         </TouchableOpacity>
+      </View>
+    );
+  }
 
-        {/* Prices */}
+  function renderStep3() {
+    return (
+      <View>
+        <Text style={styles.stepSubtitle}>Establece el precio de tu producto</Text>
+
         <Text style={styles.label}>Precio por día (€) *</Text>
         <TextInput
           style={styles.input}
@@ -344,7 +411,7 @@ export default function PublishScreen() {
 
         <View style={styles.row}>
           <View style={styles.halfField}>
-            <Text style={styles.label}>Precio por semana (€)</Text>
+            <Text style={styles.label}>Por semana (€)</Text>
             <TextInput
               style={styles.input}
               placeholder="Opcional"
@@ -355,7 +422,7 @@ export default function PublishScreen() {
             />
           </View>
           <View style={styles.halfField}>
-            <Text style={styles.label}>Precio por mes (€)</Text>
+            <Text style={styles.label}>Por mes (€)</Text>
             <TextInput
               style={styles.input}
               placeholder="Opcional"
@@ -367,7 +434,6 @@ export default function PublishScreen() {
           </View>
         </View>
 
-        {/* Estimated value */}
         <Text style={styles.label}>Valor estimado (€) *</Text>
         <TextInput
           style={styles.input}
@@ -379,7 +445,6 @@ export default function PublishScreen() {
         />
         <Text style={styles.fieldHint}>¿Cuánto vale tu producto? Esto determina la fianza recomendada.</Text>
 
-        {/* Deposit */}
         <Text style={styles.label}>Fianza (€)</Text>
         <TextInput
           style={styles.input}
@@ -389,19 +454,23 @@ export default function PublishScreen() {
           onChangeText={setDeposit}
           keyboardType="numeric"
         />
+      </View>
+    );
+  }
 
-        {/* Zone */}
-        <Text style={styles.label}>Zona *</Text>
-        <TouchableOpacity style={styles.select} onPress={() => setZoneModal(true)} activeOpacity={0.7}>
-          <Text style={[styles.selectText, !location && styles.placeholder]}>
-            {location || 'Seleccionar zona'}
-          </Text>
-          <ChevronDown size={16} color="#9ca3af" strokeWidth={2} />
-        </TouchableOpacity>
+  function renderStep4() {
+    return (
+      <View>
+        <Text style={styles.stepSubtitle}>Añade fotos y configura la disponibilidad</Text>
 
-        {/* Photos */}
-        <Text style={styles.label}>Fotos * <Text style={styles.labelHint}>(máx. 5)</Text></Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photosRow}>
+        <Text style={styles.label}>
+          Fotos * <Text style={styles.labelHint}>(mín. 1, máx. 5)</Text>
+        </Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.photosRow}
+        >
           {photos.map((uri, i) => (
             <View key={i} style={styles.photoThumb}>
               <Image source={{ uri }} style={styles.thumbImage} resizeMode="cover" />
@@ -418,7 +487,6 @@ export default function PublishScreen() {
           )}
         </ScrollView>
 
-        {/* Availability toggle */}
         <View style={styles.availabilityRow}>
           <View style={styles.availabilityInfo}>
             <Text style={styles.availabilityLabel}>Disponible ahora</Text>
@@ -433,48 +501,113 @@ export default function PublishScreen() {
             thumbColor={availableNow ? TEAL : '#9ca3af'}
           />
         </View>
+      </View>
+    );
+  }
 
-        {/* Preview button */}
-        <TouchableOpacity
-          style={styles.submitButton}
-          onPress={() => { if (validate()) setShowPreview(true); }}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.submitText}>Previsualizar →</Text>
+  // ─── Main render ────────────────────────────────────────────────────────────
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.replace('/(tabs)/')} hitSlop={8} style={styles.backBtn}>
+          <ChevronLeft size={24} color="#111827" strokeWidth={2.5} />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Publicar producto</Text>
+        <View style={styles.headerRight} />
+      </View>
 
-        <View style={{ height: 32 }} />
+      {/* Progress bar */}
+      <View style={styles.progressContainer}>
+        {STEP_LABELS.map((label, idx) => (
+          <Fragment key={idx}>
+            {idx > 0 && (
+              <View
+                style={[
+                  styles.progressConnector,
+                  idx < step && styles.progressConnectorActive,
+                ]}
+              />
+            )}
+            <View style={styles.progressStep}>
+              <View
+                style={[
+                  styles.progressCircle,
+                  idx + 1 === step && styles.progressCircleActive,
+                  idx + 1 < step && styles.progressCircleDone,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.progressCircleText,
+                    idx + 1 <= step && styles.progressCircleTextActive,
+                  ]}
+                >
+                  {idx + 1 < step ? '✓' : idx + 1}
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.progressStepLabel,
+                  idx + 1 === step && styles.progressStepLabelActive,
+                ]}
+              >
+                {label}
+              </Text>
+            </View>
+          </Fragment>
+        ))}
+      </View>
+
+      {/* Step content */}
+      <ScrollView
+        contentContainerStyle={styles.stepContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {step === 1 && renderStep1()}
+        {step === 2 && renderStep2()}
+        {step === 3 && renderStep3()}
+        {step === 4 && renderStep4()}
+        <View style={{ height: 16 }} />
       </ScrollView>
 
-      {/* Category modal */}
-      <Modal visible={categoryModal} transparent animationType="fade" onRequestClose={() => setCategoryModal(false)}>
-        <TouchableWithoutFeedback onPress={() => setCategoryModal(false)}>
-          <View style={styles.modalOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={styles.modalSheet}>
-                <Text style={styles.modalTitle}>Categoría</Text>
-                <FlatList
-                  data={CATEGORIES}
-                  keyExtractor={(item) => item}
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={[styles.modalOption, item === category && styles.modalOptionActive]}
-                      onPress={() => { setCategory(item); setCategoryModal(false); }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.modalOptionText, item === category && styles.modalOptionTextActive]}>{item}</Text>
-                      {item === category && <Text style={styles.check}>✓</Text>}
-                    </TouchableOpacity>
-                  )}
-                />
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
+      {/* Footer navigation */}
+      <View style={styles.footer}>
+        {step > 1 ? (
+          <TouchableOpacity style={styles.backStepBtn} onPress={goBack} activeOpacity={0.7}>
+            <ChevronLeft size={18} color={TEAL} strokeWidth={2.5} />
+            <Text style={styles.backStepText}>Atrás</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.footerSpacer} />
+        )}
+        <TouchableOpacity
+          style={[styles.nextBtn, loading && styles.btnDisabled]}
+          onPress={step < 4 ? goNext : handlePublish}
+          disabled={loading}
+          activeOpacity={0.85}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.nextBtnText}>
+              {step < 4 ? 'Siguiente' : 'Publicar producto'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
 
       {/* Zone modal */}
-      <Modal visible={zoneModal} transparent animationType="fade" onRequestClose={() => setZoneModal(false)}>
+      <Modal
+        visible={zoneModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setZoneModal(false)}
+      >
         <TouchableWithoutFeedback onPress={() => setZoneModal(false)}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
@@ -489,7 +622,9 @@ export default function PublishScreen() {
                       onPress={() => { setLocation(item); setZoneModal(false); }}
                       activeOpacity={0.7}
                     >
-                      <Text style={[styles.modalOptionText, item === location && styles.modalOptionTextActive]}>{item}</Text>
+                      <Text style={[styles.modalOptionText, item === location && styles.modalOptionTextActive]}>
+                        {item}
+                      </Text>
                       {item === location && <Text style={styles.check}>✓</Text>}
                     </TouchableOpacity>
                   )}
@@ -506,22 +641,109 @@ export default function PublishScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
 
-  // Form header
+  // Header
   header: {
-    paddingHorizontal: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
     paddingTop: Platform.OS === 'ios' ? 56 : 40,
-    paddingBottom: 16,
+    paddingBottom: 14,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#f3f4f6',
   },
-  headerTitle: { fontSize: 24, fontWeight: '700', color: '#111827', letterSpacing: -0.5 },
-  form: { paddingHorizontal: 24, paddingTop: 24 },
+  backBtn: { padding: 4, marginRight: 8 },
+  headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: '#111827', textAlign: 'center' },
+  headerRight: { width: 32 },
 
-  label: { fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.4 },
+  // Progress bar
+  progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  progressStep: { alignItems: 'center', gap: 6 },
+  progressConnector: {
+    flex: 1,
+    height: 2,
+    backgroundColor: '#e5e7eb',
+    marginTop: 13,
+    marginHorizontal: 4,
+  },
+  progressConnectorActive: { backgroundColor: TEAL },
+  progressCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#f3f4f6',
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  progressCircleActive: { backgroundColor: '#fff', borderColor: TEAL },
+  progressCircleDone: { backgroundColor: TEAL, borderColor: TEAL },
+  progressCircleText: { fontSize: 12, fontWeight: '700', color: '#9ca3af' },
+  progressCircleTextActive: { color: TEAL },
+  progressStepLabel: { fontSize: 10, color: '#9ca3af', fontWeight: '500', textAlign: 'center' },
+  progressStepLabelActive: { color: TEAL, fontWeight: '700' },
+
+  // Step content
+  stepContent: { paddingHorizontal: 20, paddingTop: 20 },
+  stepSubtitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 20,
+    lineHeight: 24,
+  },
+
+  // Category grid
+  categoryRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  categoryCell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f9fafb',
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+    gap: 8,
+    minHeight: 84,
+  },
+  categoryCellActive: {
+    backgroundColor: '#f0faf5',
+    borderColor: TEAL,
+  },
+  categoryCellEmpty: { backgroundColor: 'transparent', borderColor: 'transparent' },
+  categoryIcon: { fontSize: 28 },
+  categoryLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#374151',
+    textAlign: 'center',
+    lineHeight: 14,
+  },
+  categoryLabelActive: { color: TEAL },
+
+  // Form fields
+  label: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
   labelHint: { fontSize: 12, fontWeight: '400', color: '#9ca3af', textTransform: 'none' },
   fieldHint: { fontSize: 12, color: '#9ca3af', marginTop: -12, marginBottom: 18, lineHeight: 17 },
-
   input: {
     backgroundColor: '#f9fafb',
     borderWidth: 1,
@@ -573,6 +795,22 @@ const styles = StyleSheet.create({
   aiBtnDisabled: { opacity: 0.6 },
   aiBtnText: { fontSize: 12, fontWeight: '600', color: TEAL },
 
+  // Photos
+  photosRow: { gap: 10, paddingRight: 4, marginBottom: 24 },
+  photoThumb: { width: 90, height: 90, borderRadius: 12, overflow: 'hidden', position: 'relative' },
+  thumbImage: { width: '100%', height: '100%' },
+  removePhoto: {
+    position: 'absolute', top: 5, right: 5,
+    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10, padding: 3,
+  },
+  addPhotoButton: {
+    width: 90, height: 90, borderRadius: 12,
+    borderWidth: 2, borderColor: '#d1fae5', borderStyle: 'dashed',
+    backgroundColor: '#f0faf5',
+    alignItems: 'center', justifyContent: 'center', gap: 4,
+  },
+  addPhotoText: { fontSize: 11, color: TEAL, fontWeight: '600', textAlign: 'center', lineHeight: 14 },
+
   // Availability toggle
   availabilityRow: {
     flexDirection: 'row',
@@ -590,29 +828,41 @@ const styles = StyleSheet.create({
   availabilityLabel: { fontSize: 15, fontWeight: '600', color: '#111827', marginBottom: 2 },
   availabilitySub: { fontSize: 12, color: '#6b7280' },
 
-  // Photos
-  photosRow: { gap: 10, paddingRight: 4, marginBottom: 24 },
-  photoThumb: { width: 90, height: 90, borderRadius: 12, overflow: 'hidden', position: 'relative' },
-  thumbImage: { width: '100%', height: '100%' },
-  removePhoto: {
-    position: 'absolute', top: 5, right: 5,
-    backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 10, padding: 3,
+  // Footer navigation
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 20,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
   },
-  addPhotoButton: {
-    width: 90, height: 90, borderRadius: 12,
-    borderWidth: 2, borderColor: '#d1fae5', borderStyle: 'dashed',
-    backgroundColor: '#f0faf5',
-    alignItems: 'center', justifyContent: 'center', gap: 4,
+  footerSpacer: { width: 80 },
+  backStepBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#f9fafb',
   },
-  addPhotoText: { fontSize: 11, color: TEAL, fontWeight: '600', textAlign: 'center', lineHeight: 14 },
-
-  // Form submit
-  submitButton: {
-    backgroundColor: TEAL, borderRadius: 14, height: 54,
-    alignItems: 'center', justifyContent: 'center', marginTop: 8,
+  backStepText: { fontSize: 15, fontWeight: '600', color: TEAL },
+  nextBtn: {
+    flex: 1,
+    backgroundColor: TEAL,
+    borderRadius: 12,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  submitDisabled: { opacity: 0.6 },
-  submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  btnDisabled: { opacity: 0.6 },
+  nextBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
   // Modals
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
@@ -685,15 +935,11 @@ const styles = StyleSheet.create({
   previewDescription: { fontSize: 15, color: '#4b5563', lineHeight: 24 },
   previewThumb: { width: 80, height: 80, borderRadius: 10 },
 
-  // Preview footer
   previewFooter: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    bottom: 0, left: 0, right: 0,
     backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
+    borderTopWidth: 1, borderTopColor: '#f3f4f6',
     paddingHorizontal: 24,
     paddingTop: 14,
     paddingBottom: Platform.OS === 'ios' ? 36 : 20,

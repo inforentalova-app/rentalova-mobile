@@ -321,7 +321,7 @@ export default function MyRentalsScreen() {
                     await uploadBytes(ref, blob);
                     urls.push(await getDownloadURL(ref));
                   }
-                  await updateDoc(doc(db, 'rentals', item.rentalId), { status: 'active', receptionPhotos: urls, receivedAt: Timestamp.now() });
+                  await updateDoc(doc(db, 'rentals', item.rentalId!), { status: 'active', receptionPhotos: urls, receivedAt: Timestamp.now() });
                 } catch (e) {
                   Alert.alert('Error', 'No se pudieron subir las fotos. Inténtalo de nuevo.');
                 } finally {

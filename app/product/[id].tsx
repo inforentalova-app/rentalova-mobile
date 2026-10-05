@@ -11,6 +11,7 @@ import {
   Platform,
   Alert,
   Share,
+  Modal,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { doc, getDoc, collection, query, where, limit, getDocs, addDoc, updateDoc, Timestamp } from 'firebase/firestore';
@@ -44,6 +45,7 @@ type Product = {
   pricePerWeek?: number;
   pricePerMonth?: number;
   estimatedValue?: number;
+  deposit?: number;
   photos: string[];
   ownerId?: string;
   ownerName?: string;
@@ -64,6 +66,8 @@ export default function ProductDetailScreen() {
   const [contacting, setContacting] = useState(false);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [descriptionTruncated, setDescriptionTruncated] = useState(false);
+  const [contractModalVisible, setContractModalVisible] = useState(false);
+  const [contractAccepted, setContractAccepted] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -93,7 +97,8 @@ export default function ProductDetailScreen() {
       const blocked = new Set<string>();
       snap.docs.forEach((d) => {
         const data = d.data();
-        if (data.status === 'cancelled' || data.status === 'rejected') return;
+        const BLOCKING_STATUSES = new Set(['payment_pending', 'deposit_pending', 'approved', 'owner_delivered', 'active', 'renter_returning', 'pending_owner_confirmation', 'completed']);
+        if (!BLOCKING_STATUSES.has(data.status)) return;
         const start: Date = data.startDate?.toDate?.() ?? new Date(data.startDate);
         const end: Date = data.endDate?.toDate?.() ?? new Date(data.endDate);
         const cursor = new Date(start);
@@ -298,6 +303,17 @@ export default function ProductDetailScreen() {
     } finally {
       setContacting(false);
     }
+  }
+
+  function openContractModal() {
+    const user = auth.currentUser;
+    if (!user) { router.push('/(auth)/login'); return; }
+    if (!startDate || !endDate) {
+      Alert.alert('Fechas requeridas', 'Selecciona las fechas de inicio y fin en el calendario.');
+      return;
+    }
+    setContractAccepted(false);
+    setContractModalVisible(true);
   }
 
   async function handleRent() {
@@ -574,7 +590,7 @@ export default function ProductDetailScreen() {
           <TouchableOpacity
             style={[styles.rentButtonInline, submitting && styles.rentButtonDisabled]}
             activeOpacity={0.85}
-            onPress={handleRent}
+            onPress={openContractModal}
             disabled={submitting}
           >
             {submitting ? (
@@ -638,6 +654,157 @@ export default function ProductDetailScreen() {
           <View style={{ height: 40 }} />
         </View>
       </ScrollView>
+
+      {/* Contract modal */}
+      <Modal
+        visible={contractModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setContractModalVisible(false)}
+      >
+          <View style={styles.contractOverlay} onTouchEnd={() => setContractModalVisible(false)}>
+              <View style={styles.contractSheet} pointerEvents="box-none" onTouchEnd={(e) => e.stopPropagation()}>
+                {/* Header */}
+                <View style={styles.contractHeader}>
+                  <Text style={styles.contractTitle}>Contrato de alquiler</Text>
+                  <TouchableOpacity onPress={() => setContractModalVisible(false)} hitSlop={8}>
+                    <Text style={styles.contractClose}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Body */}
+                <ScrollView
+                  style={[styles.contractScroll, { maxHeight: 400 }]}
+                  contentContainerStyle={styles.contractScrollContent}
+                  showsVerticalScrollIndicator={true}
+                  scrollEnabled={true}
+                  nestedScrollEnabled={true}
+                >
+                  <Text style={styles.contractIntro}>
+                    En Madrid, a{' '}
+                    <Text style={styles.contractBold}>
+                      {new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' })}
+                    </Text>
+                    , entre las partes:
+                  </Text>
+
+                  <View style={styles.contractParties}>
+                    <Text style={styles.contractPartyLine}>
+                      <Text style={styles.contractBold}>ARRENDADOR:</Text>{' '}
+                      {product.ownerName ?? '—'}
+                    </Text>
+                    <Text style={styles.contractPartyLine}>
+                      <Text style={styles.contractBold}>ARRENDATARIO:</Text>{' '}
+                      {auth.currentUser?.displayName ?? auth.currentUser?.email ?? '—'}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.contractIntro}>
+                    Ambas partes acuerdan suscribir el presente contrato de arrendamiento de bien mueble, sujeto a las siguientes cláusulas:
+                  </Text>
+
+                  <Text style={styles.contractClause}>CLÁUSULA 1. BIEN MUEBLE DEL CONTRATO</Text>
+                  <Text style={styles.contractText}>El ARRENDADOR cede en arrendamiento al ARRENDATARIO el siguiente bien mueble:</Text>
+                  <Text style={styles.contractBullet}>• <Text style={styles.contractBold}>Artículo:</Text> {product.title}</Text>
+                  <Text style={styles.contractBullet}>• <Text style={styles.contractBold}>Descripción:</Text> {product.description || 'Sin descripción adicional.'}</Text>
+
+                  <Text style={styles.contractClause}>CLÁUSULA 2. DURACIÓN DEL ARRENDAMIENTO</Text>
+                  <Text style={styles.contractText}>
+                    El arrendamiento tendrá una duración de{' '}
+                    <Text style={styles.contractBold}>{totalDays} {totalDays === 1 ? 'día' : 'días'}</Text>
+                    , con fecha de inicio el{' '}
+                    <Text style={styles.contractBold}>{startDate?.split('-').reverse().join('/')}</Text>
+                    {' '}y fecha de finalización el{' '}
+                    <Text style={styles.contractBold}>{endDate?.split('-').reverse().join('/')}</Text>
+                    . El arrendatario deberá devolver el bien en la fecha de finalización acordada.
+                  </Text>
+
+                  <Text style={styles.contractClause}>CLÁUSULA 3. PRECIO Y FORMA DE PAGO</Text>
+                  <Text style={styles.contractText}>
+                    El precio del arrendamiento es de{' '}
+                    <Text style={styles.contractBold}>{product.pricePerDay}€ por día</Text>
+                    , siendo el importe total de{' '}
+                    <Text style={styles.contractBold}>{totalPrice}€</Text>
+                    {' '}({totalDays} {totalDays === 1 ? 'día' : 'días'} × {product.pricePerDay}€).
+                  </Text>
+                  <Text style={styles.contractText}>
+                    Rentalova aplica una <Text style={styles.contractBold}>comisión del 20%</Text> sobre el importe del alquiler, asumida por el ARRENDADOR. El ARRENDATARIO no asume ninguna comisión adicional.
+                  </Text>
+
+                  <Text style={styles.contractClause}>CLÁUSULA 4. FIANZA</Text>
+                  <Text style={styles.contractText}>
+                    {product.deposit
+                      ? `El ARRENDATARIO depositará una fianza de ${product.deposit}€ en concepto de garantía. Dicha fianza será reembolsada en un plazo máximo de 24 horas tras la devolución del bien en las condiciones acordadas.`
+                      : 'Este alquiler no requiere fianza adicional.'}
+                  </Text>
+
+                  <Text style={styles.contractClause}>CLÁUSULA 5. ENTREGA DEL BIEN MUEBLE</Text>
+                  <Text style={styles.contractText}>
+                    El ARRENDADOR entregará el bien en el estado acordado en la fecha de inicio del arrendamiento. Se recomienda documentar el estado del bien mediante fotografías obligatorias en el momento de la entrega y devolución, que quedarán registradas en la plataforma Rentalova como evidencia.
+                  </Text>
+
+                  <Text style={styles.contractClause}>CLÁUSULA 6. DEVOLUCIÓN</Text>
+                  <Text style={styles.contractText}>
+                    El ARRENDATARIO se compromete a devolver el bien en la misma condición en que lo recibió, limpio y sin daños. Los gastos derivados de daños, limpieza extraordinaria o pérdida serán descontados de la fianza o repercutidos al ARRENDATARIO.
+                  </Text>
+
+                  <Text style={styles.contractClause}>CLÁUSULA 7. RESPONSABILIDADES</Text>
+                  <Text style={styles.contractText}>El ARRENDATARIO se compromete a:</Text>
+                  <Text style={styles.contractBullet}>• Usar el bien exclusivamente para el fin previsto.</Text>
+                  <Text style={styles.contractBullet}>• No ceder o subarrendar el bien a terceros sin consentimiento escrito del ARRENDADOR.</Text>
+                  <Text style={styles.contractBullet}>• Informar al ARRENDADOR de cualquier avería, daño o incidencia de forma inmediata.</Text>
+                  <Text style={styles.contractText}>
+                    El ARRENDADOR declara que el bien se encuentra en buen estado y es apto para el uso previsto.
+                  </Text>
+
+                  <Text style={styles.contractClause}>CLÁUSULA 8. CANCELACIÓN</Text>
+                  <Text style={styles.contractBullet}>• <Text style={styles.contractBold}>Más de 48h antes:</Text> cancelación gratuita con reembolso completo.</Text>
+                  <Text style={styles.contractBullet}>• <Text style={styles.contractBold}>Entre 24h y 48h antes:</Text> se retiene el 50% del importe total. La fianza se reembolsa íntegramente.</Text>
+                  <Text style={styles.contractBullet}>• <Text style={styles.contractBold}>Menos de 24h antes:</Text> no se reembolsa el importe del alquiler. La fianza se devuelve si el bien no fue retirado.</Text>
+
+                  <Text style={styles.contractClause}>CLÁUSULA 9. DISPUTAS Y MEDIACIÓN</Text>
+                  <Text style={styles.contractText}>
+                    En caso de conflicto entre las partes, Rentalova actuará como mediador neutral. Si la mediación no prospera en un plazo de 7 días hábiles, las partes podrán acudir a los tribunales competentes de Madrid.
+                  </Text>
+
+                  <Text style={styles.contractFooter}>
+                    Este contrato ha sido generado electrónicamente por Rentalova (ASOCIACIÓN JUNIOR EMPRESA SYNKRO, NIF G75285965) y tiene plena validez legal conforme a la Ley 34/2002 de Servicios de la Sociedad de la Información.
+                  </Text>
+                </ScrollView>
+
+                {/* Footer */}
+                <View style={styles.contractFooterBar}>
+                  <TouchableOpacity
+                    style={styles.checkboxRow}
+                    onPress={() => setContractAccepted((v) => !v)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.checkbox, contractAccepted && styles.checkboxChecked]}>
+                      {contractAccepted && <Text style={styles.checkboxCheck}>✓</Text>}
+                    </View>
+                    <Text style={styles.checkboxLabel}>He leído y acepto los términos del contrato</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.contractAcceptBtn, !contractAccepted && styles.contractAcceptBtnDisabled]}
+                    onPress={() => { setContractModalVisible(false); handleRent(); }}
+                    disabled={!contractAccepted}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.contractAcceptBtnText}>Aceptar y continuar</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.contractCancelBtn}
+                    onPress={() => setContractModalVisible(false)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.contractCancelBtnText}>Cancelar</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+          </View>
+      </Modal>
 
       {/* Back button overlay */}
     </View>
@@ -777,4 +944,107 @@ const styles = StyleSheet.create({
   ownerProductBody: { padding: 8 },
   ownerProductTitle: { fontSize: 12, fontWeight: '600', color: '#111827', lineHeight: 16, marginBottom: 4 },
   ownerProductPrice: { fontSize: 12, fontWeight: '700', color: TEAL },
+
+  // Contract modal
+  contractOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  contractSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+    overflow: 'hidden',
+  },
+  contractHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  contractTitle: { fontSize: 17, fontWeight: '700', color: '#111827' },
+  contractClose: { fontSize: 18, color: '#6b7280', padding: 4 },
+  contractScroll: { flexGrow: 0 },
+  contractScrollContent: { paddingHorizontal: 20, paddingVertical: 16 },
+  contractIntro: { fontSize: 13, color: '#374151', lineHeight: 20, marginBottom: 12 },
+  contractParties: {
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+    gap: 4,
+  },
+  contractPartyLine: { fontSize: 13, color: '#374151', lineHeight: 20 },
+  contractClause: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#111827',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginTop: 16,
+    marginBottom: 6,
+  },
+  contractText: { fontSize: 13, color: '#4b5563', lineHeight: 20, marginBottom: 8 },
+  contractBullet: { fontSize: 13, color: '#4b5563', lineHeight: 20, marginBottom: 4, paddingLeft: 4 },
+  contractBold: { fontWeight: '700', color: '#111827' },
+  contractFooter: {
+    fontSize: 11,
+    color: '#9ca3af',
+    lineHeight: 16,
+    marginTop: 20,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  contractFooterBar: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 20,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+    gap: 10,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: '#d1d5db',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  checkboxChecked: { backgroundColor: TEAL, borderColor: TEAL },
+  checkboxCheck: { fontSize: 12, color: '#fff', fontWeight: '700' },
+  checkboxLabel: { flex: 1, fontSize: 13, color: '#374151', lineHeight: 19 },
+  contractAcceptBtn: {
+    backgroundColor: TEAL,
+    borderRadius: 12,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contractAcceptBtnDisabled: { backgroundColor: '#9ca3af' },
+  contractAcceptBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  contractCancelBtn: {
+    borderRadius: 12,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contractCancelBtnText: { color: '#6b7280', fontSize: 14, fontWeight: '600' },
 });

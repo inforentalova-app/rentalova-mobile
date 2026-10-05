@@ -21,19 +21,11 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
         }}
       />
-      <Tabs.Screen name="search" options={{ href: null }} />
       <Tabs.Screen
         name="favorites"
         options={{
           title: 'Favoritos',
           tabBarIcon: ({ color, size }) => <Heart color={color} size={size} />,
-        }}
-      />
-      <Tabs.Screen
-        name="messages"
-        options={{
-          title: 'Mensajes',
-          tabBarIcon: ({ color, size }) => <MessageCircle color={color} size={size} />,
         }}
       />
       <Tabs.Screen
@@ -44,12 +36,20 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="messages"
+        options={{
+          title: 'Mensajes',
+          tabBarIcon: ({ color, size }) => <MessageCircle color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Perfil',
           tabBarIcon: ({ color, size }) => <User color={color} size={size} />,
         }}
       />
+      <Tabs.Screen name="search" options={{ href: null }} />
     </Tabs>
   );
 }

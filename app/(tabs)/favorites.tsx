@@ -87,7 +87,7 @@ export default function FavoritesScreen() {
             </View>
           ) : null}
           <Text style={styles.price}>
-            {item.pricePerDay != null ? `$${item.pricePerDay}/día` : '—'}
+            {item.pricePerDay != null ? `${item.pricePerDay.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}/día` : '—'}
           </Text>
         </View>
       </TouchableOpacity>

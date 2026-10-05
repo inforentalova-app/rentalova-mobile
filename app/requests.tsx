@@ -23,7 +23,6 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage
 import { onAuthStateChanged } from 'firebase/auth';
 import { ChevronLeft } from 'lucide-react-native';
 import { db, auth, storage } from '../lib/firebase';
-import { createNotification } from '../lib/notifications';
 
 const TEAL = '#4b9c78';
 
@@ -116,15 +115,6 @@ export default function RequestsScreen() {
     setProcessingId(rentalId);
     try {
       await updateDoc(doc(db, 'rentals', rentalId), { status: 'approved' });
-      if (item.renterId) {
-        createNotification(item.renterId, 'request_approved', {
-          title: '¡Solicitud aprobada!',
-          message: `Tu solicitud para alquilar ${item.productTitle} ha sido aprobada. Completa el pago para confirmar tu reserva.`,
-          link: '/dashboard/rentals',
-          productName: item.productTitle,
-          actorName: item.ownerName ?? undefined,
-        }).catch(() => {});
-      }
     } catch (e: any) {
       console.error('Error approving rental:', e);
     } finally {
@@ -158,8 +148,8 @@ export default function RequestsScreen() {
       selectionLimit: 3,
       quality: 0.7,
     });
-    console.log('[Delivery] fotos seleccionadas:', result.assets.length);
-    if (result.canceled || result.assets.length === 0) return;
+    console.log('[Delivery] fotos seleccionadas:', result.assets?.length ?? 0);
+    if (result.canceled || !result.assets?.length) return;
 
     const rid = rental.rentalId ?? rental.id;
     setDeliveryUploadingId(rental.id);
