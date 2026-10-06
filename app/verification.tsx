@@ -88,7 +88,7 @@ export default function VerificationScreen() {
     }
     const result = await ImagePicker.launchCameraAsync({
       cameraType: ImagePicker.CameraType.front,
-      allowsEditing: true,
+      allowsEditing: false,
       quality: 0.8,
     });
     if (!result.canceled && result.assets[0]) {

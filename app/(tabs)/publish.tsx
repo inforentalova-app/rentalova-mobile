@@ -1,4 +1,4 @@
-import { useState, Fragment } from 'react';
+import { useState, Fragment, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,6 @@ import {
   ActivityIndicator,
   StyleSheet,
   Platform,
-  Alert,
   KeyboardAvoidingView,
   Switch,
 } from 'react-native';
@@ -20,7 +19,8 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { collection, addDoc, doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { X, ChevronDown, ImagePlus, MapPin, ChevronLeft } from 'lucide-react-native';
+import { X, ChevronDown, ImagePlus, MapPin, ChevronLeft, CheckCircle, AlertCircle, Info } from 'lucide-react-native';
+import CustomAlert, { type AlertButton, type CustomAlertProps } from '../../components/CustomAlert';
 import { db, storage, auth } from '../../lib/firebase';
 
 const TEAL = '#4b9c78';
@@ -74,15 +74,19 @@ export default function PublishScreen() {
   const [showPreview, setShowPreview] = useState(false);
   const [generatingDesc, setGeneratingDesc] = useState(false);
 
+  const [alertCfg, setAlertCfg] = useState<CustomAlertProps>({ visible: false, icon: null, iconBg: '#f0faf5', title: '', message: '', buttons: [] });
+  function showAlert(icon: ReactNode, iconBg: string, title: string, message: string, buttons: AlertButton[]) { setAlertCfg({ visible: true, icon, iconBg, title, message, buttons }); }
+  function hideAlert() { setAlertCfg((p) => ({ ...p, visible: false })); }
+
   // ─── Image picking ──────────────────────────────────────────────────────────
   async function pickImages() {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permiso necesario', 'Necesitamos acceso a tu galería para añadir fotos.');
+      showAlert(<Info size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', 'Permiso necesario', 'Necesitamos acceso a tu galería para añadir fotos.', [{ text: 'OK', onPress: hideAlert }]);
       return;
     }
     const remaining = 5 - photos.length;
-    if (remaining <= 0) { Alert.alert('Límite alcanzado', 'Puedes añadir un máximo de 5 fotos.'); return; }
+    if (remaining <= 0) { showAlert(<Info size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', 'Límite alcanzado', 'Puedes añadir un máximo de 5 fotos.', [{ text: 'OK', onPress: hideAlert }]); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsMultipleSelection: true,
@@ -109,15 +113,15 @@ export default function PublishScreen() {
   // ─── Step validation ────────────────────────────────────────────────────────
   function validateStep(): boolean {
     if (step === 1) {
-      if (!category) { Alert.alert('Campo requerido', 'Selecciona una categoría.'); return false; }
+      if (!category) { showAlert(<Info size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', 'Campo requerido', 'Selecciona una categoría.', [{ text: 'OK', onPress: hideAlert }]); return false; }
     } else if (step === 2) {
-      if (!title.trim()) { Alert.alert('Campo requerido', 'Añade un título al producto.'); return false; }
-      if (!location) { Alert.alert('Campo requerido', 'Selecciona una zona.'); return false; }
+      if (!title.trim()) { showAlert(<Info size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', 'Campo requerido', 'Añade un título al producto.', [{ text: 'OK', onPress: hideAlert }]); return false; }
+      if (!location) { showAlert(<Info size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', 'Campo requerido', 'Selecciona una zona.', [{ text: 'OK', onPress: hideAlert }]); return false; }
     } else if (step === 3) {
-      if (!pricePerDay || isNaN(Number(pricePerDay))) { Alert.alert('Campo requerido', 'Introduce un precio por día válido.'); return false; }
-      if (!estimatedValue || isNaN(Number(estimatedValue))) { Alert.alert('Campo requerido', 'Introduce el valor estimado del producto.'); return false; }
+      if (!pricePerDay || isNaN(Number(pricePerDay))) { showAlert(<Info size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', 'Campo requerido', 'Introduce un precio por día válido.', [{ text: 'OK', onPress: hideAlert }]); return false; }
+      if (!estimatedValue || isNaN(Number(estimatedValue))) { showAlert(<Info size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', 'Campo requerido', 'Introduce el valor estimado del producto.', [{ text: 'OK', onPress: hideAlert }]); return false; }
     } else if (step === 4) {
-      if (photos.length === 0) { Alert.alert('Fotos requeridas', 'Añade al menos una foto del producto.'); return false; }
+      if (photos.length === 0) { showAlert(<Info size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', 'Fotos requeridas', 'Añade al menos una foto del producto.', [{ text: 'OK', onPress: hideAlert }]); return false; }
     }
     return true;
   }
@@ -133,8 +137,8 @@ export default function PublishScreen() {
 
   // ─── AI description ─────────────────────────────────────────────────────────
   async function handleGenerateDescription() {
-    if (!title.trim()) { Alert.alert('Campo requerido', 'Introduce primero el título del producto.'); return; }
-    if (!category) { Alert.alert('Campo requerido', 'Selecciona primero la categoría.'); return; }
+    if (!title.trim()) { showAlert(<Info size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', 'Campo requerido', 'Introduce primero el título del producto.', [{ text: 'OK', onPress: hideAlert }]); return; }
+    if (!category) { showAlert(<Info size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', 'Campo requerido', 'Selecciona primero la categoría.', [{ text: 'OK', onPress: hideAlert }]); return; }
     setGeneratingDesc(true);
     try {
       const user = auth.currentUser;
@@ -154,7 +158,7 @@ export default function PublishScreen() {
       const data = await res.json();
       if (data.description) setDescription(data.description);
     } catch (e: any) {
-      Alert.alert('Error al generar descripción', e.message ?? 'No se pudo generar la descripción.');
+      showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error al generar descripción', e.message ?? 'No se pudo generar la descripción.', [{ text: 'OK', onPress: hideAlert }]);
     } finally {
       setGeneratingDesc(false);
     }
@@ -187,11 +191,9 @@ export default function PublishScreen() {
         createdAt: Timestamp.now(),
       });
       await updateDoc(doc(db, 'products', ref.id), { productId: ref.id });
-      Alert.alert('¡Publicado!', 'Tu producto ya está disponible.', [
-        { text: 'Ver mis productos', onPress: () => router.replace('/my-products') },
-      ]);
+      showAlert(<CheckCircle size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', '¡Publicado!', 'Tu producto ya está disponible.', [{ text: 'Ver mis productos', onPress: () => { hideAlert(); router.replace('/my-products'); } }]);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'No se pudo publicar el producto.');
+      showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', e.message ?? 'No se pudo publicar el producto.', [{ text: 'OK', onPress: hideAlert }]);
     } finally {
       setLoading(false);
     }
@@ -302,6 +304,7 @@ export default function PublishScreen() {
             )}
           </TouchableOpacity>
         </View>
+        <CustomAlert {...alertCfg} />
       </View>
     );
   }
@@ -600,6 +603,8 @@ export default function PublishScreen() {
           )}
         </TouchableOpacity>
       </View>
+
+      <CustomAlert {...alertCfg} />
 
       {/* Zone modal */}
       <Modal

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,6 @@ import {
   Modal,
   TextInput,
   KeyboardAvoidingView,
-  Alert,
   RefreshControl,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -21,8 +20,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { collection, query, where, onSnapshot, getDocs, doc, updateDoc, addDoc, Timestamp } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { onAuthStateChanged } from 'firebase/auth';
-import { ChevronLeft } from 'lucide-react-native';
+import { ChevronLeft, AlertCircle } from 'lucide-react-native';
 import { db, auth, storage } from '../lib/firebase';
+import CustomAlert, { type AlertButton, type CustomAlertProps } from '../components/CustomAlert';
 
 const TEAL = '#4b9c78';
 
@@ -63,6 +63,9 @@ export default function RequestsScreen() {
   // Damage modal
   const [damageTarget, setDamageTarget] = useState<Rental | null>(null);
   const [damageDescription, setDamageDescription] = useState('');
+  const [alertCfg, setAlertCfg] = useState<CustomAlertProps>({ visible: false, icon: null, iconBg: '#f0faf5', title: '', message: '', buttons: [] });
+  function showAlert(icon: ReactNode, iconBg: string, title: string, message: string, buttons: AlertButton[]) { setAlertCfg({ visible: true, icon, iconBg, title, message, buttons }); }
+  function hideAlert() { setAlertCfg((p) => ({ ...p, visible: false })); }
 
   useEffect(() => {
     let snapUnsub: (() => void) | null = null;
@@ -170,7 +173,7 @@ export default function RequestsScreen() {
       });
     } catch (e: any) {
       console.error('[Delivery] error:', e);
-      Alert.alert('Error', e.message ?? 'No se pudo confirmar la entrega.');
+      showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', e.message ?? 'No se pudo confirmar la entrega.', [{ text: 'OK', onPress: hideAlert }]);
     } finally {
       setDeliveryUploadingId(null);
     }
@@ -199,7 +202,7 @@ export default function RequestsScreen() {
         ownerReturnPhotos: urls,
       });
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'No se pudo confirmar la devolución.');
+      showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', e.message ?? 'No se pudo confirmar la devolución.', [{ text: 'OK', onPress: hideAlert }]);
     } finally {
       setConfirmReturnLoadingId(null);
     }
@@ -224,7 +227,7 @@ export default function RequestsScreen() {
       setDamageTarget(null);
       setDamageDescription('');
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'No se pudo crear la disputa.');
+      showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', e.message ?? 'No se pudo crear la disputa.', [{ text: 'OK', onPress: hideAlert }]);
     } finally {
       setDisputeLoadingId(null);
     }
@@ -493,6 +496,8 @@ export default function RequestsScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <CustomAlert {...alertCfg} />
     </View>
   );
 }

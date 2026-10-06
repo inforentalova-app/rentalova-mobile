@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { Link, router } from 'expo-router';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
@@ -123,6 +124,19 @@ export default function RegisterScreen() {
           )}
         </TouchableOpacity>
 
+        <View style={styles.legalRow}>
+          <Text style={styles.legalText}>
+            Al continuar aceptas nuestros{' '}
+            <Text style={styles.legalLink} onPress={() => Linking.openURL('https://www.rentalova.com/legal/terminos')}>
+              Términos y condiciones
+            </Text>
+            {' '}y{' '}
+            <Text style={styles.legalLink} onPress={() => Linking.openURL('https://www.rentalova.com/legal/privacidad')}>
+              Política de privacidad
+            </Text>
+          </Text>
+        </View>
+
         <Link href="/(auth)/login" asChild>
           <TouchableOpacity style={styles.linkRow}>
             <Text style={styles.linkText}>
@@ -182,8 +196,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  legalRow: { marginTop: 16, paddingHorizontal: 8 },
+  legalText: { fontSize: 11, color: '#9ca3af', textAlign: 'center', lineHeight: 17 },
+  legalLink: { color: '#4b9c78', fontWeight: '600' },
   linkRow: {
-    marginTop: 28,
+    marginTop: 20,
   },
   linkText: {
     fontSize: 14,

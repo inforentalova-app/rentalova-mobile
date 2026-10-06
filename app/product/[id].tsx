@@ -1,4 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, type ReactNode } from 'react';
+import CustomAlert, { type AlertButton, type CustomAlertProps } from '../../components/CustomAlert';
 import {
   View,
   Text,
@@ -26,7 +27,7 @@ LocaleConfig.locales['es'] = {
 };
 LocaleConfig.defaultLocale = 'es';
 import { Linking } from 'react-native';
-import { ChevronLeft, MapPin, Star, Share2, MoreVertical } from 'lucide-react-native';
+import { ChevronLeft, MapPin, Star, Share2, MoreVertical, CheckCircle, AlertCircle, Calendar as CalendarIcon, Info } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { db, auth } from '../../lib/firebase';
 
@@ -68,6 +69,14 @@ export default function ProductDetailScreen() {
   const [descriptionTruncated, setDescriptionTruncated] = useState(false);
   const [contractModalVisible, setContractModalVisible] = useState(false);
   const [contractAccepted, setContractAccepted] = useState(false);
+  const [alertCfg, setAlertCfg] = useState<CustomAlertProps>({
+    visible: false, icon: null, iconBg: '#f0faf5', title: '', message: '', buttons: [],
+  });
+
+  function showCustomAlert(icon: ReactNode, iconBg: string, title: string, message: string, buttons: AlertButton[]) {
+    setAlertCfg({ visible: true, icon, iconBg, title, message, buttons });
+  }
+  function hideCustomAlert() { setAlertCfg((prev) => ({ ...prev, visible: false })); }
 
   useEffect(() => {
     if (!id) return;
@@ -233,7 +242,7 @@ export default function ProductDetailScreen() {
         status: 'open',
         createdAt: Timestamp.now(),
       });
-      Alert.alert('Reporte enviado', 'Gracias por tu reporte. Lo revisaremos en breve.');
+      showCustomAlert(<CheckCircle size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', 'Reporte enviado', 'Gracias por tu reporte. Lo revisaremos en breve.', [{ text: 'OK', onPress: hideCustomAlert }]);
     } catch (e) {
       console.error('Error submitting report:', e);
     }
@@ -258,7 +267,7 @@ export default function ProductDetailScreen() {
     if (!user) { router.push('/(auth)/login'); return; }
     if (!product?.ownerId) return;
     if (user.uid === product.ownerId) {
-      Alert.alert('Aviso', 'No puedes iniciar un chat contigo mismo.');
+      showCustomAlert(<Info size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', 'Aviso', 'No puedes iniciar un chat contigo mismo.', [{ text: 'OK', onPress: hideCustomAlert }]);
       return;
     }
     setContacting(true);
@@ -299,7 +308,7 @@ export default function ProductDetailScreen() {
       });
       router.push(`/chat/${convRef.id}`);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'No se pudo abrir el chat.');
+      showCustomAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', e.message ?? 'No se pudo abrir el chat.', [{ text: 'OK', onPress: hideCustomAlert }]);
     } finally {
       setContacting(false);
     }
@@ -309,7 +318,7 @@ export default function ProductDetailScreen() {
     const user = auth.currentUser;
     if (!user) { router.push('/(auth)/login'); return; }
     if (!startDate || !endDate) {
-      Alert.alert('Fechas requeridas', 'Selecciona las fechas de inicio y fin en el calendario.');
+      showCustomAlert(<CalendarIcon size={32} color="#f97316" strokeWidth={2} />, '#fff7ed', 'Fechas requeridas', 'Selecciona las fechas de inicio y fin en el calendario.', [{ text: 'OK', onPress: hideCustomAlert }]);
       return;
     }
     setContractAccepted(false);
@@ -323,7 +332,7 @@ export default function ProductDetailScreen() {
       return;
     }
     if (!startDate || !endDate) {
-      Alert.alert('Fechas requeridas', 'Selecciona las fechas de inicio y fin en el calendario.');
+      showCustomAlert(<CalendarIcon size={32} color="#f97316" strokeWidth={2} />, '#fff7ed', 'Fechas requeridas', 'Selecciona las fechas de inicio y fin en el calendario.', [{ text: 'OK', onPress: hideCustomAlert }]);
       return;
     }
     if (!product) return;
@@ -345,13 +354,14 @@ export default function ProductDetailScreen() {
       });
       await updateDoc(ref, { rentalId: ref.id });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert(
+      showCustomAlert(
+        <CheckCircle size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5',
         '¡Solicitud enviada!',
         'Solicitud enviada. El propietario tiene que aceptarla antes de proceder al pago.',
-        [{ text: 'Ver mis alquileres', onPress: () => router.replace('/my-rentals') }],
+        [{ text: 'Ver mis alquileres', onPress: () => { hideCustomAlert(); router.replace('/my-rentals'); } }],
       );
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'No se pudo enviar la solicitud.');
+      showCustomAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', e.message ?? 'No se pudo enviar la solicitud.', [{ text: 'OK', onPress: hideCustomAlert }]);
     } finally {
       setSubmitting(false);
     }
@@ -654,6 +664,8 @@ export default function ProductDetailScreen() {
           <View style={{ height: 40 }} />
         </View>
       </ScrollView>
+
+      <CustomAlert {...alertCfg} />
 
       {/* Contract modal */}
       <Modal

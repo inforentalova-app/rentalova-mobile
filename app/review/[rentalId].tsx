@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   ScrollView,
   StyleSheet,
   Platform,
-  Alert,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import {
@@ -23,8 +22,9 @@ import {
   Timestamp,
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-import { ChevronLeft, Star } from 'lucide-react-native';
+import { ChevronLeft, Star, CheckCircle, AlertCircle, Info } from 'lucide-react-native';
 import { db, auth } from '../../lib/firebase';
+import CustomAlert, { type AlertButton, type CustomAlertProps } from '../../components/CustomAlert';
 
 const TEAL = '#4b9c78';
 
@@ -45,6 +45,9 @@ export default function ReviewScreen() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [alreadyReviewed, setAlreadyReviewed] = useState(false);
+  const [alertCfg, setAlertCfg] = useState<CustomAlertProps>({ visible: false, icon: null, iconBg: '#f0faf5', title: '', message: '', buttons: [] });
+  function showAlert(icon: ReactNode, iconBg: string, title: string, message: string, buttons: AlertButton[]) { setAlertCfg({ visible: true, icon, iconBg, title, message, buttons }); }
+  function hideAlert() { setAlertCfg((p) => ({ ...p, visible: false })); }
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -59,7 +62,10 @@ export default function ReviewScreen() {
             where('reviewerId', '==', user.uid),
           )),
         ]);
-        if (!rentalSnap.exists()) { Alert.alert('Error', 'Alquiler no encontrado.'); router.back(); return; }
+        if (!rentalSnap.exists()) {
+          showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', 'Alquiler no encontrado.', [{ text: 'OK', onPress: () => { hideAlert(); router.back(); } }]);
+          return;
+        }
         setRental(rentalSnap.data() as RentalData);
         if (!reviewSnap.empty) setAlreadyReviewed(true);
       } catch (e) {
@@ -72,12 +78,12 @@ export default function ReviewScreen() {
   }, [rentalId]);
 
   async function handleSubmit() {
-    if (rating === 0) { Alert.alert('Selecciona una valoración', 'Elige entre 1 y 5 estrellas.'); return; }
+    if (rating === 0) { showAlert(<Info size={32} color="#f97316" strokeWidth={2} />, '#fff7ed', 'Selecciona una valoración', 'Elige entre 1 y 5 estrellas.', [{ text: 'OK', onPress: hideAlert }]); return; }
     if (!rental || !uid) return;
 
     const currentUid = auth.currentUser?.uid;
     if (!currentUid) {
-      Alert.alert('Error', 'No estás autenticado. Vuelve a iniciar sesión.');
+      showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', 'No estás autenticado. Vuelve a iniciar sesión.', [{ text: 'OK', onPress: hideAlert }]);
       return;
     }
 
@@ -113,19 +119,22 @@ export default function ReviewScreen() {
         }, { merge: true });
       });
 
-      Alert.alert('¡Gracias!', 'Tu valoración ha sido enviada.', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      showAlert(<CheckCircle size={32} color="#4b9c78" strokeWidth={2} />, '#f0faf5', '¡Gracias!', 'Tu valoración ha sido enviada.', [{ text: 'OK', onPress: () => { hideAlert(); router.back(); } }]);
     } catch (e: any) {
       console.error('[Review] error:', e);
-      Alert.alert('Error', e.message ?? 'No se pudo enviar la valoración.');
+      showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', e.message ?? 'No se pudo enviar la valoración.', [{ text: 'OK', onPress: hideAlert }]);
     } finally {
       setSubmitting(false);
     }
   }
 
   if (loading) {
-    return <View style={styles.centered}><ActivityIndicator size="large" color={TEAL} /></View>;
+    return (
+      <>
+        <View style={styles.centered}><ActivityIndicator size="large" color={TEAL} /></View>
+        <CustomAlert {...alertCfg} />
+      </>
+    );
   }
 
   if (alreadyReviewed) {
@@ -140,6 +149,7 @@ export default function ReviewScreen() {
         <View style={styles.centered}>
           <Text style={styles.alreadyText}>Ya has valorado este alquiler.</Text>
         </View>
+        <CustomAlert {...alertCfg} />
       </View>
     );
   }
@@ -212,6 +222,7 @@ export default function ReviewScreen() {
 
         <View style={{ height: 32 }} />
       </ScrollView>
+      <CustomAlert {...alertCfg} />
     </View>
   );
 }

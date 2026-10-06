@@ -244,6 +244,18 @@ export default function WalletScreen() {
               onChangeText={setAmount}
               keyboardType="decimal-pad"
             />
+            {(() => {
+              const amountNum = parseFloat(amount);
+              const maxEuros = balance !== null ? balance / 100 : null;
+              if (maxEuros !== null && !isNaN(amountNum) && amountNum > maxEuros) {
+                return (
+                  <Text style={styles.amountError}>
+                    No puedes retirar más de {maxEuros.toFixed(2)}€
+                  </Text>
+                );
+              }
+              return null;
+            })()}
 
             <View style={styles.modalActions}>
               <TouchableOpacity
@@ -253,11 +265,16 @@ export default function WalletScreen() {
               >
                 <Text style={styles.modalCancelText}>Cancelar</Text>
               </TouchableOpacity>
+              {(() => {
+                const amountNum = parseFloat(amount);
+                const maxEuros = balance !== null ? balance / 100 : null;
+                const exceeded = maxEuros !== null && !isNaN(amountNum) && amountNum > maxEuros;
+                return (
               <TouchableOpacity
-                style={styles.modalConfirmBtn}
+                style={[styles.modalConfirmBtn, (submitting || exceeded) && { opacity: 0.5 }]}
                 onPress={handleWithdraw}
                 activeOpacity={0.8}
-                disabled={submitting}
+                disabled={submitting || exceeded}
               >
                 {submitting ? (
                   <ActivityIndicator color="#fff" size="small" />
@@ -265,6 +282,8 @@ export default function WalletScreen() {
                   <Text style={styles.modalConfirmText}>Confirmar</Text>
                 )}
               </TouchableOpacity>
+                );
+              })()}
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -363,6 +382,7 @@ const styles = StyleSheet.create({
     flex: 1, height: 44, borderRadius: 10, borderWidth: 1, borderColor: '#e5e7eb',
     alignItems: 'center', justifyContent: 'center', backgroundColor: '#f9fafb',
   },
+  amountError: { fontSize: 12, color: '#ef4444', marginTop: -10, marginBottom: 12 },
   modalCancelText: { fontSize: 14, fontWeight: '600', color: '#6b7280' },
   modalConfirmBtn: {
     flex: 1, height: 44, borderRadius: 10,

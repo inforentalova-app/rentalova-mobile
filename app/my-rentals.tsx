@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   StyleSheet,
   Platform,
   Linking,
-  Alert,
   RefreshControl,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -16,8 +15,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { collection, query, where, getDocs, onSnapshot, doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { onAuthStateChanged } from 'firebase/auth';
-import { ChevronLeft, Package } from 'lucide-react-native';
+import { ChevronLeft, Package, AlertCircle, Info } from 'lucide-react-native';
 import { db, auth, storage } from '../lib/firebase';
+import CustomAlert, { type AlertButton, type CustomAlertProps } from '../components/CustomAlert';
 
 const TEAL = '#4b9c78';
 
@@ -68,6 +68,9 @@ export default function MyRentalsScreen() {
   const [confirmLoadingId, setConfirmLoadingId] = useState<string | null>(null);
   const [returnLoadingId, setReturnLoadingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [alertCfg, setAlertCfg] = useState<CustomAlertProps>({ visible: false, icon: null, iconBg: '#f0faf5', title: '', message: '', buttons: [] });
+  function showAlert(icon: ReactNode, iconBg: string, title: string, message: string, buttons: AlertButton[]) { setAlertCfg({ visible: true, icon, iconBg, title, message, buttons }); }
+  function hideAlert() { setAlertCfg((p) => ({ ...p, visible: false })); }
 
   useEffect(() => {
     let snapUnsub: (() => void) | null = null;
@@ -133,7 +136,7 @@ export default function MyRentalsScreen() {
       if (!checkoutUrl) throw new Error('No se recibió la URL de pago.');
       await Linking.openURL(checkoutUrl);
     } catch (e: any) {
-      Alert.alert('Error al pagar', e.message ?? 'No se pudo iniciar el proceso de pago.');
+      showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error al pagar', e.message ?? 'No se pudo iniciar el proceso de pago.', [{ text: 'OK', onPress: hideAlert }]);
     } finally {
       setPaymentLoadingId(null);
     }
@@ -160,7 +163,7 @@ export default function MyRentalsScreen() {
       if (!depositCheckoutUrl) throw new Error('No se recibió la URL de autorización.');
       await Linking.openURL(depositCheckoutUrl);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'No se pudo iniciar la autorización de la fianza.');
+      showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', e.message ?? 'No se pudo iniciar la autorización de la fianza.', [{ text: 'OK', onPress: hideAlert }]);
     } finally {
       setDepositLoadingId(null);
     }
@@ -174,7 +177,7 @@ export default function MyRentalsScreen() {
     });
     if (result.canceled || result.assets.length === 0) return;
     if (result.assets.length < 3) {
-      Alert.alert('Fotos insuficientes', 'Debes subir al menos 3 fotos del estado del producto.');
+      showAlert(<Info size={32} color="#f97316" strokeWidth={2} />, '#fff7ed', 'Fotos insuficientes', 'Debes subir al menos 3 fotos del estado del producto.', [{ text: 'OK', onPress: hideAlert }]);
       return;
     }
 
@@ -193,7 +196,7 @@ export default function MyRentalsScreen() {
         receptionPhotos: urls,
       });
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'No se pudo confirmar la recepción.');
+      showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', e.message ?? 'No se pudo confirmar la recepción.', [{ text: 'OK', onPress: hideAlert }]);
     } finally {
       setConfirmLoadingId(null);
     }
@@ -224,7 +227,7 @@ export default function MyRentalsScreen() {
         status: 'renter_returning',
       });
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'No se pudo marcar como devuelto.');
+      showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', e.message ?? 'No se pudo marcar como devuelto.', [{ text: 'OK', onPress: hideAlert }]);
     } finally {
       setReturnLoadingId(null);
     }
@@ -261,17 +264,38 @@ export default function MyRentalsScreen() {
         )}
 
         {item.status === 'payment_pending' && (
-          <TouchableOpacity
-            style={[styles.payBtn, paymentLoadingId === rid && styles.btnDisabled]}
-            activeOpacity={0.8}
-            onPress={() => handlePayNow(item)}
-            disabled={paymentLoadingId === rid}
-          >
-            {paymentLoadingId === rid
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={styles.payBtnText}>💳 Pagar ahora</Text>
-            }
-          </TouchableOpacity>
+          <>
+            <View style={styles.paymentSummary}>
+              <Text style={styles.paymentSummaryRow}>
+                <Text style={styles.paymentSummaryLabel}>Producto  </Text>
+                <Text style={styles.paymentSummaryValue}>{item.productTitle}</Text>
+              </Text>
+              <Text style={styles.paymentSummaryRow}>
+                <Text style={styles.paymentSummaryLabel}>Inicio  </Text>
+                <Text style={styles.paymentSummaryValue}>{formatDate(item.startDate)}</Text>
+              </Text>
+              <Text style={styles.paymentSummaryRow}>
+                <Text style={styles.paymentSummaryLabel}>Fin  </Text>
+                <Text style={styles.paymentSummaryValue}>{formatDate(item.endDate)}</Text>
+              </Text>
+              {item.totalPrice != null && (
+                <Text style={styles.paymentSummaryCharge}>
+                  Se realizará un cargo de {item.totalPrice}€ en tu tarjeta
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity
+              style={[styles.payBtn, paymentLoadingId === rid && styles.btnDisabled]}
+              activeOpacity={0.8}
+              onPress={() => handlePayNow(item)}
+              disabled={paymentLoadingId === rid}
+            >
+              {paymentLoadingId === rid
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Text style={styles.payBtnText}>💳 Pagar ahora</Text>
+              }
+            </TouchableOpacity>
+          </>
         )}
 
         {item.status === 'deposit_pending' && (
@@ -307,7 +331,7 @@ export default function MyRentalsScreen() {
               onPress={async () => {
                 const result = await ImagePicker.launchImageLibraryAsync({ allowsMultipleSelection: true, mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
                 if (result.canceled || result.assets.length < 3) {
-                  Alert.alert('Fotos requeridas', 'Debes subir al menos 3 fotos del estado del producto al recibirlo.');
+                  showAlert(<Info size={32} color="#f97316" strokeWidth={2} />, '#fff7ed', 'Fotos requeridas', 'Debes subir al menos 3 fotos del estado del producto al recibirlo.', [{ text: 'OK', onPress: hideAlert }]);
                   return;
                 }
                 setSubmitting(true);
@@ -323,7 +347,7 @@ export default function MyRentalsScreen() {
                   }
                   await updateDoc(doc(db, 'rentals', item.rentalId!), { status: 'active', receptionPhotos: urls, receivedAt: Timestamp.now() });
                 } catch (e) {
-                  Alert.alert('Error', 'No se pudieron subir las fotos. Inténtalo de nuevo.');
+                  showAlert(<AlertCircle size={32} color="#ef4444" strokeWidth={2} />, '#fef2f2', 'Error', 'No se pudieron subir las fotos. Inténtalo de nuevo.', [{ text: 'OK', onPress: hideAlert }]);
                 } finally {
                   setSubmitting(false);
                 }
@@ -413,6 +437,7 @@ export default function MyRentalsScreen() {
           }
         />
       )}
+      <CustomAlert {...alertCfg} />
     </View>
   );
 }
@@ -460,8 +485,18 @@ const styles = StyleSheet.create({
   dateValue: { fontSize: 13, color: '#374151', fontWeight: '500' },
   price: { marginTop: 10, fontSize: 15, fontWeight: '700', color: TEAL },
   btnDisabled: { opacity: 0.6 },
+  paymentSummary: {
+    marginTop: 12, borderRadius: 10, padding: 12,
+    backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a',
+  },
+  paymentSummaryRow: { fontSize: 13, color: '#374151', lineHeight: 20 },
+  paymentSummaryLabel: { fontWeight: '600', color: '#9ca3af' },
+  paymentSummaryValue: { color: '#111827' },
+  paymentSummaryCharge: {
+    marginTop: 8, fontSize: 13, fontWeight: '700', color: '#b45309', textAlign: 'center',
+  },
   payBtn: {
-    marginTop: 12, borderRadius: 10, paddingVertical: 10,
+    marginTop: 8, borderRadius: 10, paddingVertical: 10,
     alignItems: 'center', backgroundColor: '#f59e0b',
   },
   payBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
