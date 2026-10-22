@@ -15,7 +15,7 @@ import {
 import { Link, router } from 'expo-router';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import {
-  doc, setDoc, collection, query, where, getDocs, addDoc,
+  doc, setDoc, collection, query, where, getDocs, addDoc, Timestamp,
 } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 
@@ -24,6 +24,7 @@ export default function RegisterScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [referralInput, setReferralInput] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleRegister() {
@@ -42,6 +43,7 @@ export default function RegisterScreen() {
         email: user.email,
         referralCode: ownCode,
         createdAt: new Date().toISOString(),
+        acceptedTermsAt: Timestamp.now(),
       }, { merge: true });
 
       const code = referralInput.trim().toUpperCase();
@@ -116,7 +118,23 @@ export default function RegisterScreen() {
           autoCorrect={false}
         />
 
-        <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
+        <TouchableOpacity style={styles.termsRow} onPress={() => setAcceptedTerms(v => !v)} activeOpacity={0.7}>
+          <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
+            {acceptedTerms && <Text style={styles.checkmark}>✓</Text>}
+          </View>
+          <Text style={styles.termsText}>
+            He leído y acepto los{' '}
+            <Text style={styles.termsLink} onPress={() => Linking.openURL('https://www.rentalova.com/legal/terminos')}>
+              Términos y condiciones
+            </Text>
+            {' '}y la{' '}
+            <Text style={styles.termsLink} onPress={() => Linking.openURL('https://www.rentalova.com/legal/privacidad')}>
+              Política de privacidad
+            </Text>
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.button, !acceptedTerms && styles.buttonDisabled]} onPress={handleRegister} disabled={loading || !acceptedTerms}>
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
@@ -195,6 +213,48 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    width: '100%',
+    marginBottom: 14,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#d1d5db',
+    backgroundColor: '#f9fafb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  checkboxChecked: {
+    backgroundColor: '#4b9c78',
+    borderColor: '#4b9c78',
+  },
+  checkmark: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 14,
+  },
+  termsText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#6b7280',
+    lineHeight: 19,
+  },
+  termsLink: {
+    color: '#4b9c78',
+    fontWeight: '600',
+  },
+  buttonDisabled: {
+    opacity: 0.45,
   },
   legalRow: { marginTop: 16, paddingHorizontal: 8 },
   legalText: { fontSize: 11, color: '#9ca3af', textAlign: 'center', lineHeight: 17 },
